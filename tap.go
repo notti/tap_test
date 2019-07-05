@@ -60,7 +60,7 @@ func main() {
 	addr.Family = unix.ARPHRD_ETHER // hw addresses use ARPHRD values in Family!
 	copy(addr.Data[:], []int8{0, 1, 2, 3, 4, 5})
 
-	err = unix.IoctlSetIFReqAddr(fd, unix.SIOCSIFHWADDR, name, addr)
+	err = unix.IoctlSetIFReqAddr(fd, unix.SIOCSIFHWADDR, name, &addr)
 	if err != nil {
 		log.Fatal("Couldn't set hwaddr: ", err)
 	}
@@ -77,7 +77,7 @@ func main() {
 		log.Fatal("Couldn't get hwaddr: ", err)
 	}
 
-	if !reflect.DeepEqual(addr, realaddr) {
+	if !reflect.DeepEqual(&addr, realaddr) {
 		log.Fatalf("Setting HW address didn't work. Tried %#v but got %#v!", addr, realaddr)
 	}
 
@@ -213,7 +213,7 @@ func main() {
 	}
 	fprog.Filter = &rawprog[0]
 
-	err = unix.IoctlSetSockFprog(fd, unix.TUNATTACHFILTER, fprog)
+	err = unix.IoctlSetSockFprog(fd, unix.TUNATTACHFILTER, &fprog)
 	if err != nil {
 		log.Fatal("Couldn't attach filter: ", err)
 	}
@@ -223,7 +223,7 @@ func main() {
 		log.Fatal("Couldn't load back filter: ", err)
 	}
 
-	if !reflect.DeepEqual(fprog, testfprog) {
+	if !reflect.DeepEqual(&fprog, testfprog) {
 		log.Fatal("Read back BPF filter is not the same")
 	}
 
