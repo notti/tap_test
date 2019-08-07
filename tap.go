@@ -20,14 +20,18 @@ func bringUp(name string) error {
 	}
 	defer unix.Close(sockfd)
 
-	_, flags, err := unix.IoctlGetIFReqFlags(sockfd, unix.SIOCGIFFLAGS, name)
+	flags := unix.IFReqShort{
+		Name: name,
+	}
+
+	err = unix.IoctlIFReq(sockfd, unix.SIOCGIFFLAGS, &flags)
 	if err != nil {
 		return fmt.Errorf("couldn't query if flags: %s", err)
 	}
 
-	flags |= unix.IFF_UP
+	flags.Short |= unix.IFF_UP
 
-	_, err = unix.IoctlSetIFReqFlags(sockfd, unix.SIOCSIFFLAGS, name, flags)
+	err = unix.IoctlIFReq(sockfd, unix.SIOCSIFFLAGS, &flags)
 	if err != nil {
 		return fmt.Errorf("couldn't set if flags: %s", err)
 	}
@@ -49,18 +53,25 @@ func main() {
 	//         Without IFF_NO_PI every packet is/has to be prepended with unix.TUNPI
 	//         The returned name is the one the kernel actually used
 	//         If this call succeeds, packets can be read with unix.Read from the fd and written with unix.Write to the fd (one full packet per call)
-	name, err = unix.IoctlSetIFReqFlags(fd, unix.TUNSETIFF, name, unix.IFF_TAP|unix.IFF_NO_PI)
+	flags := unix.IFReqShort{
+		Name:  name,
+		Short: unix.IFF_TAP | unix.IFF_NO_PI,
+	}
+	err = unix.IoctlIFReq(fd, unix.TUNSETIFF, &flags)
 	if err != nil {
 		log.Fatal("Couldn't create interface: ", err)
 	}
+	name = flags.Name
 	log.Println("Real name:", name)
 
 	// No need to set MAC address explicitely - but we try out here if it works
-	var addr unix.RawSockaddr
-	addr.Family = unix.ARPHRD_ETHER // hw addresses use ARPHRD values in Family!
-	copy(addr.Data[:], []int8{0, 1, 2, 3, 4, 5})
+	addr := unix.IFReqSockaddr{
+		Name: name,
+	}
+	addr.Addr.Family = unix.ARPHRD_ETHER // hw addresses use ARPHRD values in Family!
+	copy(addr.Addr.Data[:], []int8{0, 1, 2, 3, 4, 5})
 
-	err = unix.IoctlSetIFReqAddr(fd, unix.SIOCSIFHWADDR, name, &addr)
+	err = unix.IoctlIFReq(fd, unix.SIOCSIFHWADDR, &addr)
 	if err != nil {
 		log.Fatal("Couldn't set hwaddr: ", err)
 	}
@@ -72,12 +83,15 @@ func main() {
 	}
 
 	// See if setting the address worked...
-	realaddr, err := unix.IoctlGetIFReqAddr(fd, unix.SIOCGIFHWADDR, name)
+	realaddr := unix.IFReqSockaddr{
+		Name: name,
+	}
+	err = unix.IoctlIFReq(fd, unix.SIOCGIFHWADDR, &realaddr)
 	if err != nil {
 		log.Fatal("Couldn't get hwaddr: ", err)
 	}
 
-	if !reflect.DeepEqual(&addr, realaddr) {
+	if !reflect.DeepEqual(addr, realaddr) {
 		log.Fatalf("Setting HW address didn't work. Tried %#v but got %#v!", addr, realaddr)
 	}
 
@@ -157,12 +171,16 @@ func main() {
 	}.run(t)
 
 	// Let's try out TUNFilter
-	addrs := make([][]byte, 3)
-	addrs[0] = []byte{0, 1, 2, 3, 4, 1}
-	addrs[1] = []byte{0, 1, 2, 3, 4, 2}
-	addrs[2] = []byte{0, 1, 2, 3, 4, 3}
+	filter := unix.TUNFilter{
+		Addrs: [][]byte{
+			{0, 1, 2, 3, 4, 1},
+			{0, 1, 2, 3, 4, 2},
+			{0, 1, 2, 3, 4, 3},
+		},
+		Mask: unix.TUN_FLT_ALLMULTI,
+	}
 
-	err = unix.IoctlSetTUNFilter(fd, unix.TUNSETTXFILTER, unix.TUN_FLT_ALLMULTI, addrs)
+	err = unix.IoctlSetTUNFilter(fd, unix.TUNSETTXFILTER, &filter)
 	if err != nil {
 		log.Fatal("Couldn't set filter: ", err)
 	}
@@ -175,8 +193,10 @@ func main() {
 		desc:    "TXFILTER",
 	}.run(t)
 
+	filter.Addrs = nil
+
 	// remove filter
-	err = unix.IoctlSetTUNFilter(fd, unix.TUNSETTXFILTER, unix.TUN_FLT_ALLMULTI, nil)
+	err = unix.IoctlSetTUNFilter(fd, unix.TUNSETTXFILTER, &filter)
 	if err != nil {
 		log.Fatal("Couldn't set filter: ", err)
 	}
